@@ -26,7 +26,7 @@ public class BrickAuthoring : MonoBehaviour, IConvertGameObjectToEntity
         };
         dstManager.AddComponentData(entity, bounds);
 
-        dstManager.AddComponent<BrickScore>(entity);
+        dstManager.AddComponentData(entity, new BrickScore { Value = 1 });
 
         dstManager.AddComponent<Position2D>(entity);
         dstManager.RemoveComponent<Translation>(entity);

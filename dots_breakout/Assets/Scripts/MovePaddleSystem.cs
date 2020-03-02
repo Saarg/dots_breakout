@@ -5,37 +5,24 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 
+[UpdateBefore(typeof(MoveBallSystem))]
 public class MovePaddleSystem : JobComponentSystem
 {
-    [BurstCompile]
-    [RequireComponentTag(typeof(PaddleTag))]
-    struct MovePaddleJob : IJobForEach<Position2D, RectangleBounds, MovementSpeed>
-    {
-        public ScreenBoundsData ScreenBounds;
-        public float MoveDirection;
-        public float DeltaTime;
-        
-        public void Execute(
-            ref Position2D translation,
-            [ReadOnly] ref RectangleBounds bounds,
-            [ReadOnly] ref MovementSpeed speed)
-        {
-            var position = translation.Value;
-            position.x += MoveDirection * speed.Speed * DeltaTime;
-            position = math.min(math.max(ScreenBounds.XYMin + bounds.HalfWidthHeight, position), ScreenBounds.XYMax - bounds.HalfWidthHeight);
-            translation.Value = position;
-        }
-    }
-    
     protected override JobHandle OnUpdate(JobHandle inputDependencies)
     {
-        var job = new MovePaddleJob
+        var deltaTime = Time.DeltaTime;
+        var screenBounds = GetSingleton<ScreenBoundsData>();
+        
+        Entities.WithoutBurst().ForEach((ref PaddleTag paddleTag, ref Position2D translation, in RectangleBounds bounds, in MovementSpeed speed) =>
         {
-            ScreenBounds = GetSingleton<ScreenBoundsData>(),
-            MoveDirection = Input.GetAxis("Horizontal"),
-            DeltaTime = Time.DeltaTime
-        };
+            var MoveDirection = Input.GetAxis(paddleTag.InputName.ToString());
+            
+            var position = translation.Value;
+            position.x += MoveDirection * speed.Speed * deltaTime;
+            position = math.min(math.max(screenBounds.XYMin + bounds.HalfWidthHeight, position), screenBounds.XYMax - bounds.HalfWidthHeight);
+            translation.Value = position;
+        }).Run();
 
-        return job.Schedule(this, inputDependencies);
+        return default;
     }
 }

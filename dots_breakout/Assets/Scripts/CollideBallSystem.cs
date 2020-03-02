@@ -5,7 +5,6 @@ using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
 
-[AlwaysUpdateSystem]
 [UpdateAfter(typeof(MoveBallSystem))]
 public class CollideBallSystem : JobComponentSystem
 {
@@ -14,22 +13,28 @@ public class CollideBallSystem : JobComponentSystem
     private EntityQuery m_BrickQuery;
     
     [BurstCompile]
-    struct CollideBallsWithPaddleJob : IJobForEach<RectangleBounds, MovementSpeed, Position2D, Velocity2D>
+    struct CollideBallsWithPaddleJob : IJobForEachWithEntity<RectangleBounds, MovementSpeed, Position2D, Velocity2D, BallScore>
     {
         public Entity PaddleEntity;
-        
+
         [ReadOnly]
         [NativeDisableContainerSafetyRestriction] 
         public ComponentDataFromEntity<Position2D> PaddleTranslation;
         
         [ReadOnly] 
         public ComponentDataFromEntity<RectangleBounds> PaddleBounds;
+        
+        public PaddleTagScore PaddleScore;
+        public EntityCommandBuffer.Concurrent Commandbuffer;
 
         public void Execute(
+            Entity entity,
+            int index,
             [ReadOnly]ref RectangleBounds ballBounds, 
             [ReadOnly]ref MovementSpeed speed,
             ref Position2D ballTranslation,
-            ref Velocity2D ballVelocity)
+            ref Velocity2D ballVelocity,
+            [ReadOnly]ref BallScore ballScore)
         {
             var ballPosition = ballTranslation.Value;
             var paddlePosition = PaddleTranslation[PaddleEntity].Value;
@@ -47,12 +52,16 @@ public class CollideBallSystem : JobComponentSystem
                 
                 ballVelocity.Velocity = velocity;
                 ballTranslation.Value = ballPosition;
+
+                PaddleScore.Value += ballScore.Value;
+                ballScore.Value = 0;
+                Commandbuffer.SetComponent(index, PaddleEntity, PaddleScore);
             }
         }
     }
 
     [BurstCompile]
-    struct CollideBallsWithBricksJob_Accelerated : IJobForEachWithEntity<RectangleBounds, MovementSpeed, Position2D, Velocity2D>
+    struct CollideBallsWithBricksJob_Accelerated : IJobForEachWithEntity<RectangleBounds, MovementSpeed, Position2D, Velocity2D, BallScore>
     {
         public EntityCommandBuffer.Concurrent Ecb;
 
@@ -60,6 +69,7 @@ public class CollideBallSystem : JobComponentSystem
 
         [ReadOnly] public ComponentDataFromEntity<Position2D> BrickTranslationRO;
         [ReadOnly] public ComponentDataFromEntity<RectangleBounds> BrickRectangleBoundsRO;
+        [ReadOnly] public ComponentDataFromEntity<BrickScore> BrickScore;
 
         public void Execute(
             Entity e,
@@ -67,7 +77,8 @@ public class CollideBallSystem : JobComponentSystem
             [ReadOnly]ref RectangleBounds ballBounds, 
             [ReadOnly]ref MovementSpeed speed,
             [ReadOnly]ref Position2D ballTranslation,
-            ref Velocity2D velocity2D)
+            ref Velocity2D velocity2D,
+            ref BallScore ballScore)
         {
             var ballPosition = ballTranslation.Value;
             var velocity = velocity2D.Velocity;
@@ -108,6 +119,9 @@ public class CollideBallSystem : JobComponentSystem
                         else
                             invertY = true;
                         
+                    var brickScore = BrickScore[brickEntity];
+                    ballScore.Value += brickScore.Value;
+                    
                     Ecb.DestroyEntity(ballIndex, brickEntity);
                 }
             }
@@ -121,19 +135,24 @@ public class CollideBallSystem : JobComponentSystem
             velocity2D.Velocity = velocity;
         }
     }
-    
+
     protected override JobHandle OnUpdate(JobHandle inputDependencies)
     {
-        var paddleEntity = GetSingletonEntity<PaddleTag>();
-        var paddleJob = new CollideBallsWithPaddleJob
+        JobHandle collideBrickHandle = inputDependencies;
+        
+        Entities.WithoutBurst().ForEach((Entity paddleEntity, ref PaddleTagScore paddleTagScore) =>
         {
-            PaddleEntity = paddleEntity,
+            var paddleJob = new CollideBallsWithPaddleJob
+            {
+                PaddleEntity = paddleEntity,
+                PaddleScore = paddleTagScore,
+                Commandbuffer = m_EndSimECBSystem.CreateCommandBuffer().ToConcurrent(),
             
-            PaddleTranslation = GetComponentDataFromEntity<Position2D>(true),
-            PaddleBounds = GetComponentDataFromEntity<RectangleBounds>(true)
-        };
-        var paddleHandle = paddleJob.Schedule(this, inputDependencies);
-        var collideBrickHandle = paddleHandle;
+                PaddleTranslation = GetComponentDataFromEntity<Position2D>(true),
+                PaddleBounds = GetComponentDataFromEntity<RectangleBounds>(true)
+            };
+            collideBrickHandle = paddleJob.Schedule(this, collideBrickHandle);
+        }).Run();
         
         var brickCount = m_BrickQuery.CalculateEntityCount();
         if (brickCount > 0)
@@ -146,12 +165,14 @@ public class CollideBallSystem : JobComponentSystem
                 BrickGrid = hashGrid,
 
                 BrickTranslationRO = GetComponentDataFromEntity<Position2D>(true),
-                BrickRectangleBoundsRO = GetComponentDataFromEntity<RectangleBounds>(true)
+                BrickRectangleBoundsRO = GetComponentDataFromEntity<RectangleBounds>(true),
+                BrickScore = GetComponentDataFromEntity<BrickScore>(true)
             };
             
-            collideBrickHandle = brickJob.Schedule(this, paddleHandle);
-            m_EndSimECBSystem.AddJobHandleForProducer(collideBrickHandle);
+            collideBrickHandle = brickJob.Schedule(this, collideBrickHandle);
         }
+        
+        m_EndSimECBSystem.AddJobHandleForProducer(collideBrickHandle);
 
         return collideBrickHandle;
     }
@@ -164,5 +185,7 @@ public class CollideBallSystem : JobComponentSystem
         {
             All = new []{ ComponentType.ReadOnly<Position2D>(), ComponentType.ReadOnly<RectangleBounds>(), ComponentType.ReadOnly<BrickScore>() }
         });
+
+        RequireSingletonForUpdate<PaddleTag>();
     }
 }

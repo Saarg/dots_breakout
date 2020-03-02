@@ -23,11 +23,14 @@ public class MoveBallSystem : JobComponentSystem
             
             if (position.x - ballBounds.HalfWidthHeight.x < ScreenBounds.XYMin.x || position.x + ballBounds.HalfWidthHeight.x > ScreenBounds.XYMax.x)
                 ballVelocity.Velocity.x = -ballVelocity.Velocity.x;
-            
-            if (position.y - ballBounds.HalfWidthHeight.y < ScreenBounds.XYMin.y || position.y + ballBounds.HalfWidthHeight.y > ScreenBounds.XYMax.y)
+
+            if (position.y + ballBounds.HalfWidthHeight.y > ScreenBounds.XYMax.y)
                 ballVelocity.Velocity.y = -ballVelocity.Velocity.y;
-            
-            position = math.min(math.max(ScreenBounds.XYMin + ballBounds.HalfWidthHeight, position), ScreenBounds.XYMax - ballBounds.HalfWidthHeight);
+
+            if (position.y - ballBounds.HalfWidthHeight.y < ScreenBounds.XYMin.y)
+                position = new float2(ballTranslation.Value.x, ScreenBounds.XYMax.y);
+            else
+                position = math.min(math.max(ScreenBounds.XYMin + ballBounds.HalfWidthHeight, position), ScreenBounds.XYMax - ballBounds.HalfWidthHeight);
             
             ballTranslation.Value = position;
         }

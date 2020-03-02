@@ -3,6 +3,11 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
 
+public struct BallScore : IComponentData
+{
+    public int Value;
+}
+
 public struct RectangleBounds : IComponentData
 {
     public float2 HalfWidthHeight;
@@ -35,6 +40,7 @@ public class BallAuthoring : MonoBehaviour, IConvertGameObjectToEntity
         });
         
         dstManager.AddComponent<Velocity2D>(entity);
+        dstManager.AddComponent<BallScore>(entity);
         
         dstManager.AddComponent<Position2D>(entity);
         dstManager.RemoveComponent<Translation>(entity);
